@@ -24,7 +24,8 @@ see <https://foundation.rust-lang.org/>.
 import time
 import random
 import readline  # ler caracteres especiais
-import subprocess
+from subprocess import Popen, PIPE
+import tempfile
 
 from rich import print
 from rich.console import Console
@@ -33,7 +34,6 @@ from string import ascii_letters, digits
 import logging
 
 log = logging.getLogger("rich")
-
 
 def print_banner(name, version, author):
     def _shuffle(line, nlen):
@@ -55,24 +55,25 @@ def print_banner(name, version, author):
     print(f"\tVersion: {version}\n")
 
 
-# working with rust
-
-
+# Rust REPL
 class RustInterpreter:
+
     def __init__(self):
-        stdout, stderr = subprocess.Popen(
-            ["which", "rustc"], stdout=subprocess.PIPE
+
+        stdout, stderr = Popen(
+            ["which", "rustc"], stdout=PIPE, shell=False
         ).communicate()
+
         if not stdout:
             raise Exception("Error: Rust compiler ('rustc') not found on system.")
         self.history = []
 
     def run(self):
+
         T_INICIO = """\n//--- BEGIN ---\nfn main() {\n\tlet _rust_result = {\n\t\t"""
         T_FIM = """\n\t};\n\tprintln!("{:?}", _rust_result);\n}\n//---- END ----"""
 
         while True:
-            # rich console
 
             user_input = Console().input("rust> ").strip()
             start_time = time.time()
@@ -97,31 +98,45 @@ class RustInterpreter:
             rust_code = T_INICIO + rcode + T_FIM
             print(rust_code)
 
-            with open("/tmp/code.rs", "w+") as f:
-                f.write(rust_code)
+            # to avoid temfile name prediction 
+            # https://security.openstack.org/guidelines/dg_using-temporary-files-securely.html
 
-            # compile rust code (rustc build tool)
-            _p = subprocess.Popen(
-                ["rustc", "/tmp/code.rs", "-o", "/tmp/code"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            # _p.wait()
-            stdout, stderr = _p.communicate()
+            compiled = tempfile.NamedTemporaryFile(delete=False)
 
-            if stdout:
-                print(2)
-                print(stderr.decode().strip())
+            with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+                temp_file.write(rust_code)
+                temp_file.seek(0)
 
-            if stderr:
-                # errors from compiler
-                print(stderr.decode().strip())
-                if "error" in stderr.decode().strip():
-                    self.history.pop()
+                # set file permissions to only allow owner access
+                # os.chmod(temp_file.name, 0o600)
+                
+                # temporary compiled file 
+                # print(compiled.name)
+
+                # compile rust code (rustc build tool)
+                _p = Popen(
+                    ["rustc", temp_file.name, "-o", compiled.name],
+                    stdout=PIPE,
+                    stderr=PIPE,
+                    shell=False
+                )
+                # _p.wait()
+                stdout, stderr = _p.communicate()
+
+                if stdout:
+                    print(stderr.decode().strip())
+
+                if stderr:
+                    # errors from compiler
+                    print(stderr.decode().strip())
+                    if "error" in stderr.decode().strip():
+                        self.history.pop()
+
+            compiled.close()
 
             # execute rust (compiled file)
-            process = subprocess.Popen(
-                "/tmp/code", stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            process = Popen(
+                compiled.name, stdout=PIPE, stderr=PIPE, shell=False
             )
             stdout, stderr = process.communicate()
 
@@ -134,7 +149,6 @@ class RustInterpreter:
             end_time = time.time()
             elapsed_time = end_time - start_time
             print(f"Elapsed time: {elapsed_time:.2} seconds.")
-
 
 if __name__ == "__main__":
     print_banner("Rusterpreter", "0.2.4", "Franz Kurt")
