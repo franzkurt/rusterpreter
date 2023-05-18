@@ -3,3 +3,5 @@ Following iRust implementation in ruby in 'https://github.com/tarcieri/irust' I 
 
 ### To run
 install rich with `pip3 install rich==13.3.5` and run the repl with `python3 main.py`
+
+> Important: Install rustc in the current machine !!
